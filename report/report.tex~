@@ -1,0 +1,159 @@
+\documentclass{article}
+
+\title{PLDI Practical 2}
+\date{26/11/2018}
+\author{150008859}
+
+\setlength{\parskip}{1em}
+\setlength{\parindent}{0em}
+
+\usepackage{listings}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage{subfig}
+\usepackage{booktabs}
+
+\begin{document}
+\maketitle
+\newpage
+
+\section{Introduction}
+
+In this practical we implemented a generational garbage collector.
+
+\section{Usage}
+
+The project is a standard eclipse Java project. 
+
+\section{Tasks Accomplished}
+
+\begin{enumerate}
+\item A generational garbage collector with mark and sweep collection between generations and post collection promotion.
+\item A test heap is provided.
+\item An investigation in the time complexity of my generational collector.
+\end{enumerate}
+
+\section{Design}
+
+\subsection{Memory}
+
+The code for this can be found in \textbf{``pldi.heap.Memory''}.
+
+A Memory object compartmentalises a list of generation objects. The generations are invisible to system. Each generation represents a portion of contigious memory. The memory object provides an interface to this contigious region of memory via read and write operations. 
+
+\subsection{Generations}
+
+The code for this can be found in \textbf{``pldi.heap.Generation''}.
+
+Each generation possesses a region of memory modelled by an array of integers, a base address for that portion of contigious memory and the size of that array. 
+
+Each generation functions as a memory allocator and can allocate a ``Chunk'' of memory. Memory allocation allocation is non-trivial and is managed by FreeLists and supports splitting and coallescing. 
+
+Each generation possesses an allocation method which accepts a size and returns an address to the allocated memory. The memory object can be used to read and write to and from this address. In addition, each generation also possesses a free method which accepts an address and releases that memory for reallocation.
+
+\subsection{RunTimeObjects}
+
+The code for this can be found in the  \textbf{``pldi.objects''} package. 
+
+A RunTimeObject can allocate itself in order to obtain an address, pack (serialize) and unpack (deserialize) itself to and from memory given it's address in memory solely through use of the read and write operations. This is done through knowledge of the tag. A RunTimeObject once deserialized, can provide the list of pointers it contains (e.g. a CON object returns a list containing two pointers, a CTR object returns a list of all the pointers it stores) for use in the mark and sweep collection.
+
+A weak pointer does not emit any pointers for the mark and sweep algorithm, it does own the pointer so it has no stakes on its reachability. 
+
+\subsection{Index}
+
+The code for this can be found in \textbf{``pldi.heap.Index''}.
+
+An interesting design decision I took was storing indexes in RunTimeObjects as opposed to pointers. A table called the ``index'' maps indexes to pointers.
+
+The advantage of this design decision is claimed in promotion. When a survivor is promoted, its address changes. An index allows us to simply update the pointer for that index in the table without having to scavenge for Objects and updating pointers in memory. The index stored in any RunTimeObject remains unchanged.
+
+However, a drawback to this system would be having to perform an access to the table for each dereference in the actual system that uses the RunTimeObjects.
+
+\subsection{The RememberedSet}
+
+The RememberedSet stores pointers from RunTimeObjects in older generations to younger generations to prevent RunTimeObjects from being incorrectly collected in younger generations, they are added to the root set during the marking phase. 
+
+\subsection{Garbage Collection}
+
+The code for this can be found in \textbf{``pldi.collect.Collector''}.
+
+The algorithm can be summarised as the following:
+
+The algorithm is provided a list of roots and a threshold generation to mark and collect up to. For example, if the first generation is given, a minor collection occurs. On the otherhand, if the oldest generation is supplied, then a major collection happens. 
+
+\subsubsection{The marking phase}
+
+a) Perform a depth-first search with the garbage-collection roots and the remembered set as the entry points, (i.e. a list of pointers).
+
+b) If a pointer has been visited, skip.
+  
+c) If a pointer points to a memory address in a higher generation, skip. However, lower generations are not skipped.
+
+d) Otherwise, if the pointer has not been visited mark that memory for collection and add the pointer to the visited set.
+
+e) Deserialize the memory into a RunTimeObject that the pointer points to and visit the pointers stored by that RunTimeObject.
+
+A set is used to store marked addresses. Note that a pointer is retrieved by using the index stored in the RunTimeObject.
+
+\subsubsection{The sweeping phase}
+
+If a generation younger than the one being contains unmarked pointers, then perform the free operation on those addresses. This leaves behind survivors in each of the younger generations. 
+
+\subsubsection{The promotion phase}
+
+Survivors are promoted to a higher generation if it exists.
+
+This is performed by allocating memory in the higher generation for each survivor and copying it across then freeing the memory in the previous generation.
+
+For each promoted survivor, the index is updated to map the index to the new memory address. 
+
+\subsubsection{The unmarking phase}
+
+Empty the set used for storing visited addresses.
+
+\section{A Testing Case Study}
+
+In this section, we test the garbage collector by performing a case study on an example heap. Results have been collected via a trace produced by the program.
+
+\subsection{The initial state}
+
+This is a list of constructors. 
+
+\begin{verbatim}
+a = (Cons (ctr int bul) (Cons (ctr int bul) '(nul)))
+\end{verbatim}
+
+This is an isolated object which is unreachable. Perhaps it was an item removed from the list earlier.
+
+\begin{verbatim}
+b = (ctr int bul)
+\end{verbatim}
+
+This is a weak pointer to the removed object. 
+
+\begin{verbatim}
+(WPT b)
+\end{verbatim}
+
+This is a constructor with an indirection to a closure which has an integer.
+
+\begin{verbtim}
+(Ctr (Ind (Fcn Int))
+\end{verbatim}
+
+
+\subsection{A minor collection a)}
+
+\subsection{A minor collection b)}
+
+\subsection{A substantial collection}
+
+\subsection{A major collection}
+
+\section{Experimental Analysis}
+
+In this section, we evaluate the time complexity of the garbage collector.  
+
+\end{document}
+
